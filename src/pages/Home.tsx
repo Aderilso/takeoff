@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect } from 'react';
 import { Input } from '@/components/ui/input';
 import {
   Select,
@@ -15,11 +15,15 @@ import { ViewSwitch } from '@/components/ViewSwitch';
 import { ProjectCard } from '@/components/ProjectCard';
 import { ProjectTable } from '@/components/ProjectTable';
 import { ProjectModal } from '@/components/ProjectModal';
+import { CreateProjectDialog } from '@/components/CreateProjectDialog';
+import { EmptyState } from '@/components/EmptyState';
 import { useOverviewStats } from '@/hooks/useOverviewStats';
 import { useProjects } from '@/hooks/useProjects';
 import { Project, Discipline } from '@/types';
-import { Search, FileCheck, TrendingUp, Clock, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Search, FileCheck, TrendingUp, Clock, ChevronLeft, ChevronRight, Plus } from 'lucide-react';
 import { useDebounce } from '@/hooks/useDebounce';
+import { mockService } from '@/lib/mock';
+import { toast } from '@/hooks/use-toast';
 
 export default function Home() {
   const [view, setView] = useState<'cards' | 'list'>(() => {
@@ -32,11 +36,12 @@ export default function Home() {
   const [page, setPage] = useState(1);
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
 
   const debouncedSearch = useDebounce(search, 300);
 
   const { data: stats, loading: statsLoading } = useOverviewStats();
-  const { data: projectsData, loading: projectsLoading } = useProjects({
+  const { data: projectsData, loading: projectsLoading, refetch } = useProjects({
     search: debouncedSearch,
     discipline: disciplineFilter,
     sort,
@@ -60,7 +65,38 @@ export default function Home() {
     setModalOpen(true);
   };
 
+  const handleProjectCreated = (project: Project) => {
+    refetch();
+    setSelectedProject(project);
+    setModalOpen(true);
+  };
+
+  const handleCreateDemo = () => {
+    const useMock = import.meta.env.VITE_USE_MOCK === 'true';
+    if (!useMock) return;
+
+    mockService.seedIfEmpty();
+    refetch();
+
+    toast({
+      title: 'Projetos de demonstração criados!',
+      description: 'Abrindo projeto com processamento em andamento...',
+    });
+
+    // Open prj_002 which is Processing
+    setTimeout(() => {
+      const projects = mockService.listProjects({});
+      const processingProject = projects.items.find(p => p.id === 'prj_002');
+      if (processingProject) {
+        setSelectedProject(processingProject);
+        setModalOpen(true);
+      }
+    }, 500);
+  };
+
   const totalPages = projectsData ? Math.ceil(projectsData.total / projectsData.pageSize) : 1;
+  const showDemoButton = import.meta.env.VITE_USE_MOCK === 'true';
+  const isEmpty = projectsData && projectsData.items.length === 0 && !search && disciplineFilter === 'Todos';
 
   return (
     <div className="min-h-screen bg-background">
@@ -119,6 +155,14 @@ export default function Home() {
         {/* Filters & Controls */}
         <div className="flex flex-col lg:flex-row gap-4 items-start lg:items-center justify-between">
           <div className="flex flex-col sm:flex-row gap-4 flex-1 w-full lg:w-auto">
+            <Button
+              onClick={() => setCreateDialogOpen(true)}
+              className="sm:w-auto"
+              data-testid="new-project-button"
+            >
+              <Plus className="h-4 w-4 mr-2" />
+              Novo Projeto
+            </Button>
             <div className="relative flex-1 max-w-md">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
@@ -162,6 +206,12 @@ export default function Home() {
               <Skeleton key={i} className="h-80 rounded-2xl" />
             ))}
           </div>
+        ) : isEmpty ? (
+          <EmptyState
+            onCreateProject={() => setCreateDialogOpen(true)}
+            onCreateDemo={handleCreateDemo}
+            showDemoButton={showDemoButton}
+          />
         ) : projectsData && projectsData.items.length > 0 ? (
           <>
             {view === 'cards' ? (
@@ -208,6 +258,11 @@ export default function Home() {
       </div>
 
       <ProjectModal project={selectedProject} open={modalOpen} onOpenChange={setModalOpen} />
+      <CreateProjectDialog
+        open={createDialogOpen}
+        onOpenChange={setCreateDialogOpen}
+        onProjectCreated={handleProjectCreated}
+      />
     </div>
   );
 }
